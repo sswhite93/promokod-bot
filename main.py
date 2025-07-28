@@ -84,27 +84,26 @@ def send_welcome(message):
 # --- ГЛАВНЫЙ ОБРАБОТЧИК НАЖАТИЙ НА КНОПКИ ---
 # Этот декоратор ловит все нажатия на инлайн-кнопки
 @bot.callback_query_handler(func=lambda call: True)
+# --- ГЛАВНЫЙ ОБРАБОТЧИК НАЖАТИЙ НА КНОПКИ ---
+# Этот декоратор ловит все нажатия на инлайн-кнопки
+@callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     # call.data - это тот самый 'callback_data', который мы задали кнопкам
     
     # --- ЛОГИКА ДЛЯ ГЛАВНОГО МЕНЮ ---
     if call.data.startswith("category_"):
-        # Вырезаем ключ категории из callback_data (например, 'market' из 'category_market')
-        category_key = call.data.split('_')[1]
+        category_key = call.data.split('_', 1)[1]
         category = PROMO_CODES[category_key]
 
-        # Если у категории есть подкатегории (как у Маркета)
         if 'subcategories' in category:
             markup = types.InlineKeyboardMarkup(row_width=1)
             for sub_key, sub_value in category['subcategories'].items():
-                button = types.InlineKeyboardButton(text=sub_value['name'], callback_data=f"subcategory_{category_key}_{sub_key}")
+                # Вот здесь мы создаем callback для подкатегорий, например "subcategory_market_first"
+                button = types.InlineKeyboardButton(text=sub_value['name'], callback_data=f"subcategory_{sub_key}")
                 markup.add(button)
-            # Добавляем кнопку "Назад"
             markup.add(types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
-            # Редактируем старое сообщение, чтобы показать новое меню
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Отлично! Уточняем для категории «{category['name']}»:", reply_markup=markup)
         
-        # Если подкатегорий нет, сразу показываем промокод
         else:
             promo_text = f"Держи промокод для «{category['name']}»!\n\n🎟️ **Промокод:** `{category['code']}`\n\n**Условия:** {category['conditions']}\n\nМяу! Удачных покупок!"
             markup = types.InlineKeyboardMarkup()
@@ -112,18 +111,28 @@ def callback_handler(call):
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=promo_text, reply_markup=markup, parse_mode='Markdown')
 
     # --- ЛОГИКА ДЛЯ ПОДКАТЕГОРИЙ (Яндекс Маркет) ---
+    # !!!!!!!!!! ВОТ ЭТОТ БЛОК МЫ ПОЛНОСТЬЮ МЕНЯЕМ !!!!!!!!!!
     elif call.data.startswith("subcategory_"):
-        # Вырезаем ключи (например, 'market' и 'market_first')
-        _, category_key, subcategory_key = call.data.split('_')
+        # Извлекаем ключ подкатегории, например 'market_first' из 'subcategory_market_first'
+        subcategory_key = call.data.split('_', 1)[1]
         
-        category = PROMO_CODES[category_key]
-        subcategory = category['subcategories'][subcategory_key]
+        # Теперь нам нужно найти родительскую категорию и сам промокод
+        parent_category_key = None
+        subcategory_data = None
+
+        for cat_key, cat_value in PROMO_CODES.items():
+            if 'subcategories' in cat_value and subcategory_key in cat_value['subcategories']:
+                parent_category_key = cat_key
+                subcategory_data = cat_value['subcategories'][subcategory_key]
+                break
         
-        promo_text = f"Держи промокод для «{subcategory['name']}»!\n\n🎟️ **Промокод:** `{subcategory['code']}`\n\n**Условия:** {subcategory['conditions']}\n\nМяу! Удачных покупок!"
-        markup = types.InlineKeyboardMarkup()
-        # Кнопка "Назад" теперь ведет в меню Яндекс Маркета
-        markup.add(types.InlineKeyboardButton(text="🔙 Назад к категориям Маркета", callback_data=f"category_{category_key}"))
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=promo_text, reply_markup=markup, parse_mode='Markdown')
+        # Если мы нашли данные (а мы должны были найти)
+        if subcategory_data:
+            promo_text = f"Держи промокод для «{subcategory_data['name']}»!\n\n🎟️ **Промокод:** `{subcategory_data['code']}`\n\n**Условия:** {subcategory_data['conditions']}\n\nМяу! Удачных покупок!"
+            markup = types.InlineKeyboardMarkup()
+            # Кнопка "Назад" теперь ведет в меню Яндекс Маркета, используя найденный родительский ключ
+            markup.add(types.InlineKeyboardButton(text="🔙 Назад к категориям Маркета", callback_data=f"category_{parent_category_key}"))
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=promo_text, reply_markup=markup, parse_mode='Markdown')
 
     # --- ЛОГИКА ДЛЯ КНОПКИ "НАЗАД" ---
     elif call.data == "back_to_main":
